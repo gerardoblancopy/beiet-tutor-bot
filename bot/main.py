@@ -112,7 +112,6 @@ COGS = [
     "bot.cogs.tutor",
     "bot.cogs.quiz",
     "bot.cogs.progress",
-    "bot.cogs.solver",
     "bot.cogs.calendar_cog",
     "bot.cogs.admin",
 ]
