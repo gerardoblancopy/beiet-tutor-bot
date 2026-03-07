@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Environment
+.env
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Data (user must provide their own)
+data/optimizacion/*.pdf
+data/mercados/*.pdf
+
+# Database
+*.db
+*.sqlite3
+
+# ChromaDB
+chroma_data/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Credentials
+credentials/
+*.json
+!package.json
+
+# Logs
+*.log
+logs/
