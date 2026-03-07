@@ -54,10 +54,13 @@ async def generate_response(
     context: list, 
     user_message: str,
     rag_context: str = "",
-    use_grounding: bool = True
+    use_grounding: bool = True,
+    image_data: bytes | None = None,
+    mime_type: str | None = None
 ) -> str:
     """
     Generate a response from the LLM based on conversation history, RAG, and system prompt.
+    Supports multimodal input (images).
     """
     client = get_client()
     if not client:
@@ -94,14 +97,24 @@ async def generate_response(
             last_role = role
             
     # Add the current user message
-    if last_role == "user":
+    user_parts = []
+    if user_message.strip():
+        user_parts.append(types.Part.from_text(text=user_message))
+        
+    if image_data and mime_type:
+        user_parts.append(types.Part.from_bytes(data=image_data, mime_type=mime_type))
+        
+    if not user_parts:
+        user_parts.append(types.Part.from_text(text="(Mensaje vacío)"))
+
+    if last_role == "user" and contents:
         # If the last history message was user (unlikely unless bot failed previously), append
-        contents[-1].parts[0].text += f"\n\n{user_message}"
+        contents[-1].parts.extend(user_parts)
     else:
         contents.append(
             types.Content(
                 role="user",
-                parts=[types.Part.from_text(text=user_message)]
+                parts=user_parts
             )
         )
     

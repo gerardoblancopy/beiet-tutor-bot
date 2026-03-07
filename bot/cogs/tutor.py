@@ -72,10 +72,15 @@ class Tutor(commands.Cog):
             # 3. Check for attachments (images/voice)
             has_attachment = len(message.attachments) > 0
             attachment_type = None
+            image_data = None
+            mime_type = None
+            
             if has_attachment:
                 att = message.attachments[0]
                 if att.content_type and att.content_type.startswith("image/"):
                     attachment_type = "image"
+                    image_data = await att.read()
+                    mime_type = att.content_type
                 elif att.content_type and att.content_type.startswith("audio/"):
                     attachment_type = "voice"
                 else:
@@ -131,7 +136,9 @@ class Tutor(commands.Cog):
                         context=context,
                         user_message=content,
                         rag_context=rag_context,
-                        use_grounding=True
+                        use_grounding=True,
+                        image_data=image_data,
+                        mime_type=mime_type
                     )
                     
                     # Save bot response
