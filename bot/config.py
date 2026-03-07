@@ -108,6 +108,14 @@ class BotConfig:
     def db_path(self) -> Path:
         return self.data_dir / "beiet.db"
 
+    @property
+    def SUBJECTS(self) -> dict[str, SubjectConfig]:
+        return SUBJECTS
+
+    @property
+    def DEFAULT_SUBJECT(self) -> str:
+        return list(SUBJECTS.keys())[0]
+
 
 # Singleton
 config = BotConfig()
