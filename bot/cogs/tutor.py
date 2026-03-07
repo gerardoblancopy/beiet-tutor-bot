@@ -15,6 +15,9 @@ from bot.db.database import get_session
 from bot.db.models import Student
 from bot.core.memory import add_message, get_conversation_context
 from bot.core.llm import generate_response
+from bot.core.rag import rag_service
+from bot.core.student_tracker import get_weakest_lo
+from bot.prompts.tutor_system import get_tutor_system_prompt
 
 logger = logging.getLogger("beiet.tutor")
 
@@ -99,14 +102,36 @@ class Tutor(commands.Cog):
                         subject=student.subject
                     )
                     
-                    # TODO: Phase 3/4 - Inject RAG context and LO status here
-                    system_prompt = f"Eres el tutor BEIET para {config.SUBJECTS[student.subject].name}. El estudiante es {student.name}."
+                    # RAG Retrieval
+                    rag_context = rag_service.retrieve_context(
+                        subject=student.subject,
+                        query=content[:500],  # Avoid massive queries
+                        n_results=3
+                    )
+                    
+                    # Fetch pedagogical metrics (Weakest LO)
+                    weakest_lo_code = await get_weakest_lo(session, student.id, student.subject)
+                    weakest_lo_name = ""
+                    if weakest_lo_code:
+                        subject_config = config.SUBJECTS[student.subject]
+                        lo_obj = next((lo for lo in subject_config.learning_outcomes if lo.code == weakest_lo_code), None)
+                        if lo_obj:
+                            weakest_lo_name = f"{lo_obj.code}: {lo_obj.description}"
+                    
+                    # Assemble System Prompt
+                    system_prompt = get_tutor_system_prompt(
+                        subject_name=config.SUBJECTS[student.subject].name,
+                        student_name=student.name,
+                        weakest_lo=weakest_lo_name
+                    )
                     
                     # Generate response
                     bot_response = await generate_response(
                         system_prompt=system_prompt,
                         context=context,
-                        user_message=content
+                        user_message=content,
+                        rag_context=rag_context,
+                        use_grounding=True
                     )
                     
                     # Save bot response
