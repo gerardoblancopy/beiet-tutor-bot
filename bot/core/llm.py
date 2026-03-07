@@ -55,12 +55,12 @@ async def generate_response(
     user_message: str,
     rag_context: str = "",
     use_grounding: bool = True,
-    image_data: bytes | None = None,
+    media_data: bytes | None = None,
     mime_type: str | None = None
 ) -> str:
     """
     Generate a response from the LLM based on conversation history, RAG, and system prompt.
-    Supports multimodal input (images).
+    Supports multimodal input (images and voice).
     """
     client = get_client()
     if not client:
@@ -101,11 +101,12 @@ async def generate_response(
     if user_message.strip():
         user_parts.append(types.Part.from_text(text=user_message))
         
-    if image_data and mime_type:
-        user_parts.append(types.Part.from_bytes(data=image_data, mime_type=mime_type))
+    if media_data and mime_type:
+        user_parts.append(types.Part.from_bytes(data=media_data, mime_type=mime_type))
+        logger.info(f"Attached media of type {mime_type} to prompt.")
         
     if not user_parts:
-        user_parts.append(types.Part.from_text(text="(Mensaje vacío)"))
+        user_parts.append(types.Part.from_text(text="(Mensaje vacío o Archivo estático sin texto)"))
 
     if last_role == "user" and contents:
         # If the last history message was user (unlikely unless bot failed previously), append

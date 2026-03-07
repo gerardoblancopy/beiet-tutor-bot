@@ -72,17 +72,19 @@ class Tutor(commands.Cog):
             # 3. Check for attachments (images/voice)
             has_attachment = len(message.attachments) > 0
             attachment_type = None
-            image_data = None
+            media_data = None
             mime_type = None
             
             if has_attachment:
                 att = message.attachments[0]
                 if att.content_type and att.content_type.startswith("image/"):
                     attachment_type = "image"
-                    image_data = await att.read()
+                    media_data = await att.read()
                     mime_type = att.content_type
                 elif att.content_type and att.content_type.startswith("audio/"):
                     attachment_type = "voice"
+                    media_data = await att.read()
+                    mime_type = att.content_type
                 else:
                     attachment_type = "file"
                     
