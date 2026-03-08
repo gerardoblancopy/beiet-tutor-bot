@@ -1,0 +1,16 @@
+venv/
+env_system/
+env_fixed/
+.venv/
+__pycache__/
+*.pyc
+.git/
+.github/
+.claude/
+.agents/
+.env
+*.db
+*.sqlite3
+data/chroma_data/
+data/*.db
+.streamlit/secrets.toml
