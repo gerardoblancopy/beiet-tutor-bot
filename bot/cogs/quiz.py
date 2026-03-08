@@ -2,11 +2,12 @@ import logging
 import discord
 from discord.ext import commands
 from discord.commands import SlashCommandGroup
-from io import BytesIO
 
 from bot.db.database import get_session
-from bot.db.models import Student
+from bot.db.models import Student, QuizResult
 from bot.core.quiz_generator import generate_quiz_json, create_pdf_guide
+from bot.core.student_tracker import update_lo_progress
+from bot.config import config
 from sqlalchemy import select
 
 logger = logging.getLogger("beiet.cogs.quiz")
@@ -14,11 +15,12 @@ logger = logging.getLogger("beiet.cogs.quiz")
 
 class QuizView(discord.ui.View):
     """View handling the interactive buttons for a single question."""
-    def __init__(self, question, student_id: int):
+    def __init__(self, question, student_id: int, subject: str):
         super().__init__(timeout=300)  # 5 minutes to answer
         self.question = question
         self.student_id = student_id
-        
+        self.subject = subject
+
         # Add a button for each option
         self.add_item(QuizButton("A", question.option_a, discord.ButtonStyle.primary))
         self.add_item(QuizButton("B", question.option_b, discord.ButtonStyle.secondary))
@@ -36,27 +38,88 @@ class QuizButton(discord.ui.Button):
     async def callback(self, interaction: discord.Interaction):
         view: QuizView = self.view
         
-        if str(interaction.user.id) != str(view.student_id):
+        if interaction.user.id != view.student_id:
             await interaction.response.send_message("❌ Esta pregunta no es para ti. Genera tu propio simulacro.", ephemeral=True)
             return
-            
-        is_correct = (self.letter == view.question.correct_letter)
+
+        raw_correct_letter = view.question.correct_letter
+        correct_letter = raw_correct_letter.strip().upper() if raw_correct_letter else ""
+        valid_options = {"A", "B", "C", "D"}
+        has_valid_correct_letter = correct_letter in valid_options
+        is_correct = has_valid_correct_letter and (self.letter == correct_letter)
+
+        if not has_valid_correct_letter:
+            logger.warning(
+                "LLM returned invalid correct_letter '%s' for quiz question, skipping persistence.",
+                raw_correct_letter,
+            )
         
         # Disable all buttons
         for child in view.children:
             child.disabled = True
-            
-        color = discord.Color.green() if is_correct else discord.Color.red()
-        title = "✅ ¡Correcto!" if is_correct else "❌ Incorrecto"
+
+        if not has_valid_correct_letter:
+            color = discord.Color.orange()
+            title = "⚠️ No se pudo verificar la respuesta"
+        else:
+            color = discord.Color.green() if is_correct else discord.Color.red()
+            title = "✅ ¡Correcto!" if is_correct else "❌ Incorrecto"
         
         embed = discord.Embed(title=title, color=color)
-        embed.add_field(name="La respuesta era:", value=f"**{view.question.correct_letter}**", inline=False)
+        display_correct_letter = correct_letter if has_valid_correct_letter else "No disponible"
+        embed.add_field(name="La respuesta era:", value=f"**{display_correct_letter}**", inline=False)
         embed.add_field(name="Feedback del Tutor:", value=view.question.feedback, inline=False)
-        
-        # We could update LO progress in DB here if we had the precise LO Code attached.
-        # For now, we provide the pedagogical feedback.
-        
+        if not has_valid_correct_letter:
+            embed.add_field(
+                name="Estado del intento",
+                value="No se registró progreso porque la clave generada fue inválida.",
+                inline=False,
+            )
+
+        # Respond to Discord immediately (must be within 3 seconds)
         await interaction.response.edit_message(view=view, embed=embed)
+
+        if not has_valid_correct_letter:
+            return
+
+        # Validate lo_code against known LOs to avoid persisting LLM hallucinations
+        score = 1.0 if is_correct else 0.0
+        raw_lo_code = view.question.lo_code
+        subject_config = config.SUBJECTS.get(view.subject)
+        valid_lo_codes = subject_config.learning_outcomes.keys() if subject_config else set()
+        lo_code = raw_lo_code.strip().upper() if raw_lo_code else None
+        if lo_code and lo_code not in valid_lo_codes:
+            logger.warning(f"LLM returned unknown lo_code '{lo_code}' for subject '{view.subject}', skipping LOProgress update.")
+            lo_code = None
+
+        # Persist quiz result and RA progress after responding to Discord
+        async for session in get_session():
+            try:
+                stmt = select(Student).where(Student.discord_id == str(view.student_id))
+                result = await session.execute(stmt)
+                student = result.scalar_one_or_none()
+
+                if student:
+                    if lo_code:
+                        await update_lo_progress(session, student.id, student.subject, lo_code, score)
+
+                    quiz_result = QuizResult(
+                        student_id=student.id,
+                        subject=student.subject,
+                        lo_codes=lo_code,
+                        score=score,
+                        total_questions=1,
+                        correct_answers=1 if is_correct else 0,
+                        feedback=view.question.feedback,
+                    )
+                    session.add(quiz_result)
+                    await session.commit()
+
+                    if lo_code:
+                        embed.set_footer(text=f"Progreso actualizado · {lo_code} {'✅' if is_correct else '❌'}")
+                        await interaction.edit_original_response(embed=embed)
+            except Exception as e:
+                logger.warning(f"Could not persist quiz result for student {view.student_id}: {e}")
 
 
 class QuizTracker(commands.Cog):
@@ -99,8 +162,8 @@ class QuizTracker(commands.Cog):
         embed.set_footer(text="Haz clic en la alternativa correcta abajo.")
         
         # 4. Render View with buttons
-        view = QuizView(q, ctx.author.id)
-        
+        view = QuizView(q, ctx.author.id, student.subject)
+
         await ctx.followup.send(embed=embed, view=view)
 
 

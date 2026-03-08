@@ -52,14 +52,14 @@ class _FakeInteraction:
         self.original_edits.append(embed)
 
 
-def _build_question(lo_code: str):
+def _build_question(lo_code: str, correct_letter: str = "A"):
     return SimpleNamespace(
         statement="Pregunta de prueba",
         option_a="opcion A",
         option_b="opcion B",
         option_c="opcion C",
         option_d="opcion D",
-        correct_letter="A",
+        correct_letter=correct_letter,
         feedback="Retroalimentacion de prueba",
         lo_code=lo_code,
     )
@@ -115,3 +115,62 @@ async def test_quiz_callback_skips_lo_progress_when_lo_code_is_invalid(monkeypat
     assert fake_session.added[0].lo_codes is None
     assert len(interaction.response.edits) == 1
     assert len(interaction.original_edits) == 0
+
+
+@pytest.mark.asyncio
+async def test_quiz_callback_normalizes_lowercase_correct_letter(monkeypatch):
+    student = SimpleNamespace(id=9, discord_id="789", subject="optimizacion")
+    fake_session = _FakeSession(student=student)
+
+    async def _fake_get_session():
+        yield fake_session
+
+    update_lo_progress_mock = AsyncMock()
+    monkeypatch.setattr(quiz_module, "get_session", _fake_get_session)
+    monkeypatch.setattr(quiz_module, "update_lo_progress", update_lo_progress_mock)
+
+    view = quiz_module.QuizView(
+        _build_question("RA1", correct_letter=" a "),
+        student_id=789,
+        subject="optimizacion",
+    )
+    button = view.children[0]  # A
+    interaction = _FakeInteraction(user_id=789)
+
+    await button.callback(interaction)
+
+    update_lo_progress_mock.assert_awaited_once_with(fake_session, 9, "optimizacion", "RA1", 1.0)
+    assert fake_session.commits == 1
+    assert len(fake_session.added) == 1
+    assert fake_session.added[0].correct_answers == 1
+
+
+@pytest.mark.asyncio
+async def test_quiz_callback_skips_persistence_when_correct_letter_is_invalid(monkeypatch):
+    student = SimpleNamespace(id=10, discord_id="999", subject="optimizacion")
+    fake_session = _FakeSession(student=student)
+
+    async def _fake_get_session():
+        yield fake_session
+
+    update_lo_progress_mock = AsyncMock()
+    monkeypatch.setattr(quiz_module, "get_session", _fake_get_session)
+    monkeypatch.setattr(quiz_module, "update_lo_progress", update_lo_progress_mock)
+
+    view = quiz_module.QuizView(
+        _build_question("RA1", correct_letter="Z"),
+        student_id=999,
+        subject="optimizacion",
+    )
+    button = view.children[0]  # A
+    interaction = _FakeInteraction(user_id=999)
+
+    await button.callback(interaction)
+
+    update_lo_progress_mock.assert_not_awaited()
+    assert fake_session.commits == 0
+    assert len(fake_session.added) == 0
+    assert len(interaction.response.edits) == 1
+    assert len(interaction.original_edits) == 0
+    _, edited_embed = interaction.response.edits[0]
+    assert "No se pudo verificar" in edited_embed.title
