@@ -1,3 +1,13 @@
+---
+title: BEIET Tutor Bot
+emoji: 🎓
+colorFrom: blue
+colorTo: indigo
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # BEIET — Discord Tutor Bot 🎓
 
 Adaptive University Tutor Agent for Discord, supporting RAG knowledge bases, optimization solving, student progress tracking, and multimodal interactions.
