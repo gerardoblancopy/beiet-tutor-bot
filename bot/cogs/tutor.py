@@ -11,6 +11,7 @@ from discord.ext import commands
 from sqlalchemy import select
 
 from bot.config import config
+from bot.core.quiz_generator import create_pdf_guide, generate_quiz_json
 from bot.db.database import get_session
 from bot.db.models import Student
 from bot.core.memory import add_message, get_conversation_context
@@ -47,13 +48,53 @@ class Tutor(commands.Cog):
         logger.info(f"Received mention in {message.guild.name} from {message.author}")
         await self.process_tutoring_message(message, is_dm=False)
 
+    async def _handle_dm_quiz_shortcuts(self, message: discord.Message, student: Student, content: str) -> bool:
+        """Handle DM text shortcuts for quiz guide generation."""
+        topic = ""
+        normalized = content.strip()
+
+        if normalized.startswith("/guia_pdf"):
+            topic = normalized[len("/guia_pdf"):].strip()
+        elif normalized.startswith("/quiz "):
+            parts = normalized.split(maxsplit=2)
+            if len(parts) >= 2 and parts[1] in {"guia_pdf", "guia"}:
+                topic = parts[2].strip() if len(parts) == 3 else ""
+            else:
+                return False
+        else:
+            return False
+
+        if not topic:
+            await message.channel.send("ℹ️ Uso: `/quiz guia_pdf <tema>` o `/guia_pdf <tema>`")
+            return True
+
+        await message.channel.send(
+            f"⏳ Generando tu guía de 5 preguntas sobre '{topic}'. Esto tomará unos 20 segundos..."
+        )
+
+        quiz_data = await generate_quiz_json(student.subject, topic, num_questions=5)
+        if not quiz_data or not quiz_data.questions:
+            await message.channel.send("⚠️ Error al generar el contenido de la guía.")
+            return True
+
+        pdf_buffer = create_pdf_guide(quiz_data)
+        filename = f"Guia_BEIET_{topic.replace(' ', '_')}.pdf"
+        file = discord.File(fp=pdf_buffer, filename=filename)
+        await message.channel.send(
+            content=f"✅ Aquí tienes tu guía de estudio de {student.subject}, {student.name}.",
+            file=file,
+        )
+        return True
+
 
     async def process_tutoring_message(self, message: discord.Message, is_dm: bool):
         """Core logic for generating a response."""
         
         # 1. Show typing indicator immediately
         async with message.channel.typing():
-            
+            # Clean content (remove mention tags if any)
+            content = message.content.replace(f"<@{self.bot.user.id}>", "").strip()
+
             discord_id = str(message.author.id)
             student = await self.get_student(discord_id)
             
@@ -66,8 +107,11 @@ class Tutor(commands.Cog):
                     await message.reply(warn_msg)
                 return
 
-            # Clean content (remove mention tags if any)
-            content = message.content.replace(f"<@{self.bot.user.id}>", "").strip()
+            if is_dm and content.startswith("/"):
+                if await self._handle_dm_quiz_shortcuts(message, student, content):
+                    return
+                await message.channel.send("ℹ️ Usa los slash commands en el servidor. En DM puedes escribirme sin `/`.")
+                return
             
             # 3. Check for attachments (images/voice)
             has_attachment = len(message.attachments) > 0
@@ -117,13 +161,10 @@ class Tutor(commands.Cog):
                     )
                     
                     # Fetch pedagogical metrics (Weakest LO)
-                    weakest_lo_code = await get_weakest_lo(session, student.id, student.subject)
+                    weakest_lo_code, weakest_lo_desc = await get_weakest_lo(session, student.id, student.subject)
                     weakest_lo_name = ""
                     if weakest_lo_code:
-                        subject_config = config.SUBJECTS[student.subject]
-                        lo_obj = next((lo for lo in subject_config.learning_outcomes if lo.code == weakest_lo_code), None)
-                        if lo_obj:
-                            weakest_lo_name = f"{lo_obj.code}: {lo_obj.description}"
+                        weakest_lo_name = f"{weakest_lo_code}: {weakest_lo_desc}"
                     
                     # Assemble System Prompt
                     system_prompt = get_tutor_system_prompt(
@@ -133,15 +174,20 @@ class Tutor(commands.Cog):
                     )
                     
                     # Generate response
-                    bot_response = await generate_response(
+                    bot_response_data = await generate_response(
                         system_prompt=system_prompt,
                         context=context,
                         user_message=content,
                         rag_context=rag_context,
                         use_grounding=True,
-                        image_data=image_data,
+                        media_data=media_data,
                         mime_type=mime_type
                     )
+                    
+                    reply_text = bot_response_data.get("text", "")
+                    in_toks = bot_response_data.get("input_tokens", 0)
+                    out_toks = bot_response_data.get("output_tokens", 0)
+                    cost = bot_response_data.get("cost", 0.0)
                     
                     # Save bot response
                     await add_message(
@@ -149,11 +195,23 @@ class Tutor(commands.Cog):
                         student_id=student.id,
                         subject=student.subject,
                         role="assistant",
-                        content=bot_response
+                        content=reply_text,
+                        input_tokens=in_toks,
+                        output_tokens=out_toks,
+                        cost=cost
                     )
                     
-                    # 5. Send reply
-                    await message.reply(bot_response)
+                    # 5. Send reply (with chunking for Discord limits)
+                    if len(reply_text) <= 2000:
+                        await message.reply(reply_text)
+                    else:
+                        # Split by chunks of ~1900 to be safe
+                        chunks = [reply_text[i:i+1900] for i in range(0, len(reply_text), 1900)]
+                        for i, chunk in enumerate(chunks):
+                            if i == 0:
+                                await message.reply(chunk)
+                            else:
+                                await message.channel.send(chunk)
                     
                 except Exception as e:
                     logger.error(f"Error processing message: {e}", exc_info=True)

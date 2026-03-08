@@ -41,10 +41,14 @@ bot = commands.Bot(
     help_command=None,  # Custom help via slash command
 )
 
+_commands_synced_once = False
+
 
 @bot.event
 async def on_ready():
     """Triggered when the bot connects to Discord."""
+    global _commands_synced_once
+
     logger.info(f"✅ BEIET Bot online as {bot.user} (ID: {bot.user.id})")
     logger.info(f"   Connected to {len(bot.guilds)} server(s)")
     for guild in bot.guilds:
@@ -58,23 +62,42 @@ async def on_ready():
         )
     )
 
+    # Initialize DB (create tables)
+    from bot.db.database import init_db
+    try:
+        await init_db()
+    except Exception as e:
+        logger.error(f"❌ Failed to initialize database: {e}")
+
+    if not _commands_synced_once:
+        try:
+            # Keep command IDs stable to avoid Discord client cache glitches.
+            await bot.sync_commands(force=False, method="bulk", delete_existing=False)
+            _commands_synced_once = True
+            logger.info("   ✓ Slash commands synchronized with Discord")
+        except Exception as e:
+            logger.error(f"❌ Failed to synchronize slash commands: {e}", exc_info=True)
+
 
 @bot.event
 async def on_application_command_error(ctx: discord.ApplicationContext, error: Exception):
     """Global error handler for slash commands."""
     if isinstance(error, commands.CommandOnCooldown):
-        await ctx.respond(
-            f"⏳ Espera {error.retry_after:.1f}s antes de usar este comando de nuevo.",
-            ephemeral=True,
-        )
+        msg = f"⏳ Espera {error.retry_after:.1f}s antes de usar este comando de nuevo."
     elif isinstance(error, commands.MissingPermissions):
-        await ctx.respond("🔒 No tienes permisos para usar este comando.", ephemeral=True)
+        msg = "🔒 No tienes permisos para usar este comando."
     else:
-        logger.error(f"Command error in /{ctx.command}: {error}", exc_info=True)
-        await ctx.respond(
-            "❌ Ocurrió un error procesando tu solicitud. Intenta de nuevo.",
-            ephemeral=True,
-        )
+        logger.error(f"Command error in /{ctx.command or 'unknown'}: {error}", exc_info=True)
+        msg = "❌ Ocurrió un error procesando tu solicitud. Intenta de nuevo."
+    
+    # Send reaction/response safely
+    try:
+        if ctx.response.is_done():
+            await ctx.followup.send(msg, ephemeral=True)
+        else:
+            await ctx.respond(msg, ephemeral=True)
+    except Exception as e:
+        logger.error(f"Failed to send error response: {e}")
 
 
 @bot.event

@@ -46,6 +46,8 @@ The bot relies on several connection strings and API keys to function.
 3. Replace the placeholder values with your actual credentials:
    - `DISCORD_TOKEN`: Obtain this from the [Discord Developer Portal](https://discord.com/developers/applications).
    - `GEMINI_API_KEY`: Obtain this from [Google AI Studio](https://aistudio.google.com/).
+4. Optional backward compatibility:
+   - If your environment already uses `bot.env`, the app still loads it.
 
 ## Step 4: Run the Bot
 

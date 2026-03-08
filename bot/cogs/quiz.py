@@ -128,7 +128,43 @@ class QuizTracker(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-    quiz = SlashCommandGroup("quiz", "Comandos para evaluaciones y guías de estudio")
+    quiz = SlashCommandGroup(
+        "quiz",
+        "Comandos para evaluaciones y guías de estudio",
+        contexts={discord.InteractionContextType.guild},
+    )
+
+    async def _send_pdf_guide(self, ctx: discord.ApplicationContext, tema: str) -> None:
+        """Shared handler for PDF guide generation commands."""
+        await ctx.defer()
+
+        student = None
+        async for session in get_session():
+            stmt = select(Student).where(Student.discord_id == str(ctx.author.id))
+            result = await session.execute(stmt)
+            student = result.scalar_one_or_none()
+
+            if not student:
+                await ctx.followup.send("❌ Debes usar `/registro` antes de solicitar guías.")
+                return
+
+        await ctx.followup.send(
+            f"⏳ El Profesor BEIET está redactando tu guía de 5 preguntas sobre '{tema}'. Esto tomará unos 20 segundos..."
+        )
+
+        quiz_data = await generate_quiz_json(student.subject, tema, num_questions=5)
+        if not quiz_data or not quiz_data.questions:
+            await ctx.followup.send("⚠️ Error al generar el contenido de la guía.")
+            return
+
+        pdf_buffer = create_pdf_guide(quiz_data)
+        filename = f"Guia_BEIET_{tema.replace(' ', '_')}.pdf"
+        file = discord.File(fp=pdf_buffer, filename=filename)
+
+        await ctx.channel.send(
+            content=f"✅ ¡Aquí tienes tu guía de estudio de {student.subject}! ¡Mucho éxito, {student.name}!",
+            file=file,
+        )
 
     @quiz.command(name="simulacro", description="Genera una pregunta rápida e interactiva (Choice) para practicar.")
     async def simulacro(self, ctx: discord.ApplicationContext, tema: str):
@@ -170,31 +206,38 @@ class QuizTracker(commands.Cog):
     @quiz.command(name="guia_pdf", description="Genera una guía de ejercicios en PDF y te la envía al chat.")
     async def guia_pdf(self, ctx: discord.ApplicationContext, tema: str):
         """Generates a 5-question PDF study guide."""
-        await ctx.defer()
-        
-        async for session in get_session():
-            stmt = select(Student).where(Student.discord_id == str(ctx.author.id))
-            result = await session.execute(stmt)
-            student = result.scalar_one_or_none()
-            
-            if not student:
-                await ctx.followup.send("❌ Debes usar `/registro` antes de solicitar guías.")
-                return
-                
-        await ctx.followup.send(f"⏳ El Profesor BEIET está redactando tu guía de 5 preguntas sobre '{tema}'. Esto tomará unos 20 segundos...")
+        await self._send_pdf_guide(ctx, tema)
 
-        quiz_data = await generate_quiz_json(student.subject, tema, num_questions=5)
-        if not quiz_data or not quiz_data.questions:
-            await ctx.followup.send("⚠️ Error al generar el contenido de la guía.")
-            return
-            
-        # Create PDF
-        pdf_buffer = create_pdf_guide(quiz_data)
-        
-        filename = f"Guia_BEIET_{tema.replace(' ', '_')}.pdf"
-        file = discord.File(fp=pdf_buffer, filename=filename)
-        
-        await ctx.channel.send(content=f"✅ ¡Aquí tienes tu guía de estudio de {student.subject}! ¡Mucho éxito, {student.name}!", file=file)
+    @quiz.command(name="guia", description="Alias de guia_pdf para facilitar la búsqueda en Discord.")
+    async def guia(self, ctx: discord.ApplicationContext, tema: str):
+        """Alias for guia_pdf."""
+        await self._send_pdf_guide(ctx, tema)
+
+    @discord.slash_command(
+        name="guia_pdf",
+        description="Genera una guía de ejercicios en PDF y te la envía al chat.",
+        contexts={discord.InteractionContextType.guild},
+    )
+    async def guia_pdf_direct(
+        self,
+        ctx: discord.ApplicationContext,
+        tema: discord.Option(str, "Tema para la guía (ej: Método Simplex)"),
+    ):
+        """Top-level alias for users that cannot see /quiz guia_pdf in autocomplete."""
+        await self._send_pdf_guide(ctx, tema)
+
+    @discord.slash_command(
+        name="guia",
+        description="Genera una guía de ejercicios en PDF y te la envía al chat.",
+        contexts={discord.InteractionContextType.guild},
+    )
+    async def guia_direct(
+        self,
+        ctx: discord.ApplicationContext,
+        tema: discord.Option(str, "Tema para la guía (ej: Método Simplex)"),
+    ):
+        """Top-level /guia alias."""
+        await self._send_pdf_guide(ctx, tema)
 
 
 def setup(bot):

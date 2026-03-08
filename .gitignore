@@ -9,9 +9,14 @@ build/
 
 # Environment
 .env
+bot.env
+.env.new
 .venv/
 venv/
+venv2/
 env/
+env_fixed/
+env_system/
 
 # IDE
 .vscode/
@@ -19,9 +24,8 @@ env/
 *.swp
 *.swo
 
-# Data (user must provide their own)
-data/optimizacion/*.pdf
-data/mercados/*.pdf
+# Data (runtime — user must provide their own PDFs, DBs are generated)
+data/
 
 # Database
 *.db
@@ -29,6 +33,13 @@ data/mercados/*.pdf
 
 # ChromaDB
 chroma_data/
+data/chroma_data/
+base_chroma_data/
+chroma_db_v4/
+beiet_storage/
+fresh_db_test/
+final_data/
+:memory:
 
 # OS
 .DS_Store
@@ -42,3 +53,9 @@ credentials/
 # Logs
 *.log
 logs/
+
+# Streamlit local secrets
+.streamlit/secrets.toml
+
+# Claude Code agent skills (local)
+.agents/

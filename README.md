@@ -24,6 +24,7 @@ Initially built for:
 4. Copy `.env.example` to `.env` and configure your credentials:
    - `DISCORD_TOKEN`: From Discord Developer Portal
    - `GEMINI_API_KEY`: From Google AI Studio
+   - Optional legacy support: `bot.env` is also loaded if present.
 5. Run the bot: `python -m bot.main`
 
 ## Architecture

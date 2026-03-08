@@ -73,7 +73,10 @@ async def add_message(
     role: str,
     content: str,
     has_attachment: bool = False,
-    attachment_type: str = None
+    attachment_type: str = None,
+    input_tokens: int = 0,
+    output_tokens: int = 0,
+    cost: float = 0.0
 ) -> str:
     """Add a message to the persistent history."""
     
@@ -86,7 +89,10 @@ async def add_message(
         content=content,
         subject=subject,
         has_attachment=has_attachment,
-        attachment_type=attachment_type
+        attachment_type=attachment_type,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        cost=cost
     )
     
     session.add(msg)
@@ -196,6 +202,12 @@ async def check_summarization(session: AsyncSession, student_id: int, subject: s
         try:
             # Generate new summary
             new_summary_text = await generate_summary(existing_summary_text, convo_text)
+            if new_summary_text is None:
+                logger.warning(
+                    "Skipping summarization for student %s due unavailable summary output; preserving messages.",
+                    student_id,
+                )
+                return
             
             # Update or create summary record
             if old_sum:

@@ -82,38 +82,45 @@ def ingest_directory(subject: str, directory_path: str):
         
         topic = extract_topic_from_filename(filename)
         
-        reader = PdfReader(str(pdf_path))
-        chunks = []
-        metadatas = []
-        ids = []
-        
-        chunk_counter = 0
-        
-        for i, page in enumerate(tqdm(reader.pages, desc="Extracting & Chunking pages")):
-            text = page.extract_text()
-            if not text:
-                continue
-                
-            page_chunks = text_splitter.split_text(text)
+        try:
+            reader = PdfReader(str(pdf_path))
+            chunks = []
+            metadatas = []
+            ids = []
             
-            for c in page_chunks:
-                # Clean up extracted text
-                clean_chunk = " ".join(c.split())
-                
-                if len(clean_chunk) < 50:  # Skip chunks that are too small and noisy
+            chunk_counter = 0
+            
+            for i, page in enumerate(tqdm(reader.pages, desc="Extracting & Chunking pages")):
+                text = page.extract_text()
+                if not text:
                     continue
                     
-                chunks.append(clean_chunk)
-                metadatas.append({
-                    "source": filename,
-                    "page": i + 1,
-                    "topic": topic
-                })
-                ids.append(f"{filename}_p{i + 1}_chunk{chunk_counter}")
-                chunk_counter += 1
+                page_chunks = text_splitter.split_text(text)
                 
-        if not chunks:
-            print(f"Warning: No valid text extracted from '{filename}'.")
+                for c in page_chunks:
+                    # Clean up extracted text
+                    clean_chunk = " ".join(c.split())
+                    
+                    if len(clean_chunk) < 50:  # Skip chunks that are too small and noisy
+                        continue
+                        
+                    chunks.append(clean_chunk)
+                    metadatas.append({
+                        "source": filename,
+                        "page": i + 1,
+                        "topic": topic
+                    })
+                    ids.append(f"{filename}_p{i + 1}_chunk{chunk_counter}")
+                    chunk_counter += 1
+                    
+            if not chunks:
+                print(f"Warning: No valid text extracted from '{filename}'.")
+                continue
+        except PermissionError:
+            print(f"Error: Permission denied for '{filename}'. Skipping.")
+            continue
+        except Exception as e:
+            print(f"Error processing '{filename}': {e}. Skipping.")
             continue
             
         print(f"Generated {len(chunks)} chunks. Sending to ChromaDB (This might take a while)...")

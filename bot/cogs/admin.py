@@ -21,8 +21,15 @@ class AdminCog(commands.Cog, name="Admin"):
     async def resumen(self, ctx: discord.ApplicationContext):
         """Generates an admin dashboard summary."""
         # Simple security check: Ensure the user calling this is an admin/server owner.
-        # In a real setup, verify against a specific ROLE ID or the Professor's Discord ID.
-        if not ctx.author.guild_permissions.administrator:
+        is_admin = False
+        if ctx.guild and hasattr(ctx.author, "guild_permissions"):
+            is_admin = ctx.author.guild_permissions.administrator
+        
+        # Also allow bot owner regardless of server perms
+        if not is_admin:
+            is_admin = await self.bot.is_owner(ctx.author)
+
+        if not is_admin:
             await ctx.respond("❌ Solo los administradores o el profesor pueden usar este comando.", ephemeral=True)
             return
 

@@ -38,6 +38,7 @@ class Student(Base):
     lo_progress = relationship("LOProgress", back_populates="student", cascade="all, delete-orphan")
     quiz_results = relationship("QuizResult", back_populates="student", cascade="all, delete-orphan")
     summaries = relationship("ConversationSummary", back_populates="student", cascade="all, delete-orphan")
+    meetings = relationship("ScheduledMeeting", back_populates="student", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<Student {self.name} ({self.discord_id})>"
@@ -56,6 +57,11 @@ class ConversationMessage(Base):
     timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     has_attachment = Column(Boolean, default=False)
     attachment_type = Column(String(20), nullable=True)  # "image", "voice", "file"
+    
+    # Token Tracking
+    input_tokens = Column(Integer, default=0)
+    output_tokens = Column(Integer, default=0)
+    cost = Column(Float, default=0.0)
 
     # Relationships
     student = relationship("Student", back_populates="messages")
@@ -136,3 +142,5 @@ class ScheduledMeeting(Base):
     topic = Column(Text, nullable=True)
     status = Column(String(20), default="confirmed")  # confirmed, cancelled, completed
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    student = relationship("Student", back_populates="meetings")

@@ -80,6 +80,10 @@ class Registration(commands.Cog):
                 await ctx.respond("❌ No estás registrado. Usa `/registro` primero.", ephemeral=True)
                 return
                 
+            if student.subject not in config.SUBJECTS:
+                await ctx.respond(f"⚠️ Asignatura '{student.subject}' no reconocida.", ephemeral=True)
+                return
+            
             subject_name = config.SUBJECTS[student.subject].name
             
             embed = discord.Embed(

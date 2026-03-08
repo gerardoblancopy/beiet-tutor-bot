@@ -9,7 +9,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv()
+# Load `.env` as default, keep `bot.env` as backward-compatible fallback.
+# `override=False` (default) preserves values that are already set.
+load_dotenv(".env")
+load_dotenv("bot.env")
 
 # ─────────────────────────────────────────────
 # Subject definitions
@@ -66,24 +69,19 @@ SUBJECTS: dict[str, SubjectConfig] = {
 class BotConfig:
     """Global bot configuration."""
 
-    # Discord
-    discord_token: str = os.getenv("DISCORD_TOKEN", "")
+    # Discord & Gemini (loaded from `.env`/`bot.env` via load_dotenv)
+    @property
+    def discord_token(self) -> str:
+        return os.getenv("DISCORD_TOKEN", "")
 
-    # Gemini
-    gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
+    @property
+    def gemini_api_key(self) -> str:
+        return os.getenv("GEMINI_API_KEY", "")
+
+    # AI Models
     gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
     gemini_temperature_factual: float = 0.2
     gemini_temperature_creative: float = 0.7
-
-    # Database
-    database_url: str = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///data/beiet.db")
-
-    # ChromaDB
-    chroma_persist_dir: str = os.getenv("CHROMA_PERSIST_DIR", "./chroma_data")
-
-    # Google Calendar
-    google_calendar_credentials: str = os.getenv("GOOGLE_CALENDAR_CREDENTIALS", "")
-    professor_calendar_id: str = os.getenv("PROFESSOR_CALENDAR_ID", "")
 
     # Memory
     max_conversation_messages: int = 20   # Keep last N messages in context
@@ -97,16 +95,36 @@ class BotConfig:
     # Logging
     log_level: str = os.getenv("LOG_LEVEL", "INFO")
 
-    # Paths
-    base_dir: Path = Path(__file__).parent.parent
+    # Paths (Absolute)
+    @property
+    def base_dir(self) -> Path:
+        return Path(__file__).parent.parent.resolve()
 
     @property
     def data_dir(self) -> Path:
-        return self.base_dir / "data"
+        d = self.base_dir / "data"
+        d.mkdir(parents=True, exist_ok=True)
+        return d
 
     @property
-    def db_path(self) -> Path:
-        return self.data_dir / "beiet.db"
+    def database_url(self) -> str:
+        # Resolve DB path absolutely
+        raw_url = os.getenv("DATABASE_URL", "")
+        if raw_url.startswith("sqlite+aiosqlite:///"):
+            db_path_part = raw_url.replace("sqlite+aiosqlite:///", "")
+            if not os.path.isabs(db_path_part):
+                db_path = (self.base_dir / db_path_part).resolve()
+                return f"sqlite+aiosqlite:///{db_path}"
+        
+        # Fallback to default in data/beiet.db
+        return f"sqlite+aiosqlite:///{self.data_dir / 'beiet.db'}"
+
+    @property
+    def chroma_persist_dir(self) -> str:
+        p = os.getenv("CHROMA_PERSIST_DIR", "chroma_data")
+        if not os.path.isabs(p):
+            return str((self.base_dir / p).resolve())
+        return p
 
     @property
     def SUBJECTS(self) -> dict[str, SubjectConfig]:
@@ -115,6 +133,15 @@ class BotConfig:
     @property
     def DEFAULT_SUBJECT(self) -> str:
         return list(SUBJECTS.keys())[0]
+
+    # Google Calendar
+    @property
+    def google_calendar_credentials(self) -> str:
+        return os.getenv("GOOGLE_CALENDAR_CREDENTIALS", "")
+
+    @property
+    def professor_calendar_id(self) -> str:
+        return os.getenv("PROFESSOR_CALENDAR_ID", "")
 
 
 # Singleton

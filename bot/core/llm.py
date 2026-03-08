@@ -6,6 +6,8 @@ Handles conversation history, search grounding, and system prompts.
 """
 
 import logging
+import math
+import re
 from google import genai
 from google.genai import types
 
@@ -20,7 +22,35 @@ def get_client() -> genai.Client | None:
     return genai.Client(api_key=config.gemini_api_key)
 
 
-async def generate_summary(existing_summary: str, new_conversation: str) -> str:
+def _extract_retry_seconds(error_text: str) -> int | None:
+    """Extract retry delay from Gemini error text when available."""
+    patterns = [
+        r"retry in ([0-9]+(?:\.[0-9]+)?)s",
+        r"'retryDelay': '([0-9]+)s'",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, error_text, flags=re.IGNORECASE)
+        if match:
+            try:
+                return max(1, math.ceil(float(match.group(1))))
+            except (TypeError, ValueError):
+                return None
+    return None
+
+
+def _is_quota_error(exc: Exception) -> bool:
+    """Best-effort detection for Gemini quota/rate-limit errors."""
+    status_code = getattr(exc, "status_code", None)
+    text = str(exc).lower()
+    return (
+        status_code == 429
+        or "resource_exhausted" in text
+        or "quota exceeded" in text
+        or "too many requests" in text
+    )
+
+
+async def generate_summary(existing_summary: str, new_conversation: str) -> str | None:
     """
     Summarize a conversation excerpt to fit into persistent memory chunks.
     """
@@ -45,8 +75,11 @@ Nueva Conversación a integrar:
         )
         return response.text
     except Exception as e:
-        logger.error(f"Error generating summary: {e}")
-        return existing_summary
+        if _is_quota_error(e):
+            logger.warning(f"Summary generation skipped due Gemini quota/rate limit: {e}")
+        else:
+            logger.error(f"Error generating summary: {e}")
+        return None
 
 
 async def generate_response(
@@ -57,14 +90,19 @@ async def generate_response(
     use_grounding: bool = True,
     media_data: bytes | None = None,
     mime_type: str | None = None
-) -> str:
+) -> dict:
     """
     Generate a response from the LLM based on conversation history, RAG, and system prompt.
     Supports multimodal input (images and voice).
     """
     client = get_client()
     if not client:
-        return "⚠️ Configura GEMINI_API_KEY en el archivo `.env` para usar las funciones del tutor."
+        return {
+            "text": "⚠️ Configura GEMINI_API_KEY en `.env` (o `bot.env`) para usar las funciones del tutor.",
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "cost": 0.0,
+        }
         
     # Append RAG to system prompt to enforce grounding
     full_system_instruction = system_prompt
@@ -138,6 +176,17 @@ async def generate_response(
         
         reply_text = response.text
         
+        # Token and cost tracking
+        input_toks = 0
+        output_toks = 0
+        est_cost = 0.0
+        
+        if hasattr(response, "usage_metadata") and response.usage_metadata:
+            input_toks = response.usage_metadata.prompt_token_count or 0
+            output_toks = response.usage_metadata.candidates_token_count or 0
+            # Rough pricing estimate for 2.5 flash: $0.075 / 1M input, $0.30 / 1M output
+            est_cost = (input_toks / 1_000_000) * 0.075 + (output_toks / 1_000_000) * 0.30
+        
         # Format grounding citations if they exist
         if hasattr(response, "candidates") and response.candidates:
             candidate = response.candidates[0]
@@ -149,8 +198,30 @@ async def generate_response(
                         if hasattr(chunk, "web") and chunk.web:
                             reply_text += f"- [{chunk.web.title}]({chunk.web.uri})\n"
                             
-        return reply_text
+        return {
+            "text": reply_text,
+            "input_tokens": input_toks,
+            "output_tokens": output_toks,
+            "cost": est_cost
+        }
         
     except Exception as e:
         logger.error(f"Error generating tutor response: {e}", exc_info=True)
-        return "⚠️ Hubo un error procesando tu mensaje. Los motores matemáticos están reiniciándose..."
+        if _is_quota_error(e):
+            retry_seconds = _extract_retry_seconds(str(e))
+            wait_msg = f"Reintenta en ~{retry_seconds}s." if retry_seconds else "Reintenta en unos segundos."
+            return {
+                "text": (
+                    "⚠️ Límite temporal de Gemini alcanzado (429). "
+                    f"{wait_msg} Si persiste, revisa cuota/facturación de la API."
+                ),
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "cost": 0.0,
+            }
+        return {
+            "text": "⚠️ Hubo un error procesando tu mensaje. Los motores matemáticos están reiniciándose...",
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "cost": 0.0
+        }

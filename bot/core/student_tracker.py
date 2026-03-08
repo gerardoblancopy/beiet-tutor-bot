@@ -32,6 +32,8 @@ async def update_lo_progress(
         # Simple moving average for score update (can be more sophisticated later)
         progress.score = (progress.score * progress.attempts + score) / (progress.attempts + 1)
         progress.attempts += 1
+        if score >= 0.5:
+            progress.correct_count += 1
         progress.last_assessed = datetime.now(timezone.utc)
         if notes:
             progress.notes = notes
@@ -43,12 +45,12 @@ async def update_lo_progress(
             lo_code=lo_code,
             score=score,
             attempts=1,
+            correct_count=1 if score >= 0.5 else 0,
             last_assessed=datetime.now(timezone.utc),
             notes=notes
         )
         session.add(progress)
     
-    await session.commit()
     return progress
 
 async def get_student_progress(session: AsyncSession, student_id: int, subject: str) -> dict[str, LOProgress]:
@@ -62,7 +64,7 @@ async def get_student_progress(session: AsyncSession, student_id: int, subject: 
     
     return {p.lo_code: p for p in records}
 
-async def get_weakest_lo(session: AsyncSession, student_id: int, subject: str) -> tuple[str, str]:
+async def get_weakest_lo(session: AsyncSession, student_id: int, subject: str) -> tuple[str | None, str]:
     """Identify the weakest Learning Outcome for targeted intervention."""
     stmt = select(LOProgress).where(
         LOProgress.student_id == student_id,
