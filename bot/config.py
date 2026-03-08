@@ -134,14 +134,10 @@ class BotConfig:
     def DEFAULT_SUBJECT(self) -> str:
         return list(SUBJECTS.keys())[0]
 
-    # Google Calendar
+    # Google Calendar Appointment Scheduling
     @property
-    def google_calendar_credentials(self) -> str:
-        return os.getenv("GOOGLE_CALENDAR_CREDENTIALS", "")
-
-    @property
-    def professor_calendar_id(self) -> str:
-        return os.getenv("PROFESSOR_CALENDAR_ID", "")
+    def google_appointment_link(self) -> str:
+        return os.getenv("GOOGLE_APPOINTMENT_LINK", "")
 
 
 # Singleton
