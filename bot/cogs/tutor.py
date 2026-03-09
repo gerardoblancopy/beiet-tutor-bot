@@ -97,28 +97,23 @@ class Tutor(commands.Cog):
 
             discord_id = str(message.author.id)
             student = await self.get_student(discord_id)
-            
-            # 2. Require registration
-            if not student:
-                warn_msg = "❌ Hola. Primero debes registrarte usando el comando `/registro` en el servidor."
-                if is_dm:
-                    await message.channel.send(warn_msg)
-                else:
-                    await message.reply(warn_msg)
-                return
 
-            if is_dm and content.startswith("/"):
+            # 2. Resolve student info (fall back to defaults for unregistered users)
+            student_name = student.name if student else message.author.display_name
+            subject = student.subject if student else config.DEFAULT_SUBJECT
+
+            if student and is_dm and content.startswith("/"):
                 if await self._handle_dm_quiz_shortcuts(message, student, content):
                     return
                 await message.channel.send("ℹ️ Usa los slash commands en el servidor. En DM puedes escribirme sin `/`.")
                 return
-            
+
             # 3. Check for attachments (images/voice)
             has_attachment = len(message.attachments) > 0
             attachment_type = None
             media_data = None
             mime_type = None
-            
+
             if has_attachment:
                 att = message.attachments[0]
                 if att.content_type and att.content_type.startswith("image/"):
@@ -131,48 +126,48 @@ class Tutor(commands.Cog):
                     mime_type = att.content_type
                 else:
                     attachment_type = "file"
-                    
-            # 4. Process with LLM via persistent memory context
+
+            # 4. Process with LLM
             async for session in get_session():
                 try:
-                    # Save user message
-                    await add_message(
-                        session=session,
-                        student_id=student.id,
-                        subject=student.subject,
-                        role="user",
-                        content=content,
-                        has_attachment=has_attachment,
-                        attachment_type=attachment_type
-                    )
-                    
-                    # Fetch context window
-                    context = await get_conversation_context(
-                        session=session,
-                        student_id=student.id,
-                        subject=student.subject
-                    )
-                    
-                    # RAG Retrieval
+                    context = []
+                    rag_context = ""
+                    weakest_lo_name = ""
+
+                    if student:
+                        # Registered: full memory + progress tracking
+                        await add_message(
+                            session=session,
+                            student_id=student.id,
+                            subject=subject,
+                            role="user",
+                            content=content,
+                            has_attachment=has_attachment,
+                            attachment_type=attachment_type
+                        )
+                        context = await get_conversation_context(
+                            session=session,
+                            student_id=student.id,
+                            subject=subject
+                        )
+                        weakest_lo_code, weakest_lo_desc = await get_weakest_lo(session, student.id, subject)
+                        if weakest_lo_code:
+                            weakest_lo_name = f"{weakest_lo_code}: {weakest_lo_desc}"
+
+                    # RAG Retrieval (works for everyone)
                     rag_context = rag_service.retrieve_context(
-                        subject=student.subject,
-                        query=content[:500],  # Avoid massive queries
+                        subject=subject,
+                        query=content[:500],
                         n_results=3
                     )
-                    
-                    # Fetch pedagogical metrics (Weakest LO)
-                    weakest_lo_code, weakest_lo_desc = await get_weakest_lo(session, student.id, student.subject)
-                    weakest_lo_name = ""
-                    if weakest_lo_code:
-                        weakest_lo_name = f"{weakest_lo_code}: {weakest_lo_desc}"
-                    
+
                     # Assemble System Prompt
                     system_prompt = get_tutor_system_prompt(
-                        subject_name=config.SUBJECTS[student.subject].name,
-                        student_name=student.name,
+                        subject_name=config.SUBJECTS[subject].name,
+                        student_name=student_name,
                         weakest_lo=weakest_lo_name
                     )
-                    
+
                     # Generate response
                     bot_response_data = await generate_response(
                         system_prompt=system_prompt,
@@ -183,36 +178,36 @@ class Tutor(commands.Cog):
                         media_data=media_data,
                         mime_type=mime_type
                     )
-                    
+
                     reply_text = bot_response_data.get("text", "")
                     in_toks = bot_response_data.get("input_tokens", 0)
                     out_toks = bot_response_data.get("output_tokens", 0)
                     cost = bot_response_data.get("cost", 0.0)
-                    
-                    # Save bot response
-                    await add_message(
-                        session=session,
-                        student_id=student.id,
-                        subject=student.subject,
-                        role="assistant",
-                        content=reply_text,
-                        input_tokens=in_toks,
-                        output_tokens=out_toks,
-                        cost=cost
-                    )
-                    
+
+                    # Save bot response (only for registered students)
+                    if student:
+                        await add_message(
+                            session=session,
+                            student_id=student.id,
+                            subject=subject,
+                            role="assistant",
+                            content=reply_text,
+                            input_tokens=in_toks,
+                            output_tokens=out_toks,
+                            cost=cost
+                        )
+
                     # 5. Send reply (with chunking for Discord limits)
                     if len(reply_text) <= 2000:
                         await message.reply(reply_text)
                     else:
-                        # Split by chunks of ~1900 to be safe
                         chunks = [reply_text[i:i+1900] for i in range(0, len(reply_text), 1900)]
                         for i, chunk in enumerate(chunks):
                             if i == 0:
                                 await message.reply(chunk)
                             else:
                                 await message.channel.send(chunk)
-                    
+
                 except Exception as e:
                     logger.error(f"Error processing message: {e}", exc_info=True)
                     await message.reply("⚠️ Hubo un error procesando tu mensaje. Intenta de nuevo más tarde.")
