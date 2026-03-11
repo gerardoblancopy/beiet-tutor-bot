@@ -20,8 +20,8 @@ git reset --hard origin/main
 git clean -fd
 sudo docker build -t beiet-bot .
 sudo docker rm -f beiet-bot
-sudo docker run -d --name beiet-bot --env-file .env -v beiet-data:/app/data --restart unless-stopped beiet-bot python -m bot.main
-sudo docker logs --tail 5 beiet-bot
+sudo docker run -d --name beiet-bot --env-file .env -p 7860:7860 -v beiet-data:/app/data --restart unless-stopped beiet-bot bash start.sh
+sudo docker logs --tail 20 beiet-bot
 REMOTE
 
 echo "✅ Deploy complete!"
