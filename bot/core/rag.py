@@ -54,7 +54,7 @@ logger = logging.getLogger("beiet.rag")
 class GeminiEmbeddingFunction(EmbeddingFunction):
     """Custom embedding function for ChromaDB using Google's new genai SDK."""
 
-    def __init__(self, api_key: str, model_name: str = "text-embedding-004"):
+    def __init__(self, api_key: str, model_name: str = "gemini-embedding-001"):
         self.client = genai.Client(api_key=api_key)
         self.model_name = model_name
 

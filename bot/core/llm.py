@@ -50,6 +50,77 @@ def _is_quota_error(exc: Exception) -> bool:
     )
 
 
+def _user_requested_sources(user_message: str) -> bool:
+    """Return True when the user explicitly asks for sources/references/links."""
+    text = (user_message or "").strip().lower()
+    if not text:
+        return False
+
+    # Explicit opt-out wins.
+    negative_markers = [
+        "sin fuentes",
+        "sin referencias",
+        "no muestres fuentes",
+        "no incluyas fuentes",
+        "no incluyas referencias",
+        "sin links",
+        "sin enlaces",
+    ]
+    if any(marker in text for marker in negative_markers):
+        return False
+
+    source_patterns = [
+        r"\bfuentes?\b",
+        r"\breferencias?\b",
+        r"\bcitas?\b",
+        r"\bbibliograf[ií]a\b",
+        r"\benlaces?\b",
+        r"\blinks?\b",
+        r"\bsources?\b",
+        r"\breferences?\b",
+        r"\bcitations?\b",
+        r"de d[oó]nde (sale|proviene|lo sacaste)",
+        r"m[uú]estr(a|ame).*(fuentes|referencias|enlaces|links)",
+        r"incluy(e|e\s+al\s+final).*(fuentes|referencias|enlaces|links)",
+    ]
+    return any(re.search(pattern, text) for pattern in source_patterns)
+
+
+def _rag_context_is_useful(rag_context: str) -> bool:
+    """Detect if retrieved RAG context actually contains useful material."""
+    text = (rag_context or "").strip().lower()
+    if not text:
+        return False
+
+    empty_markers = [
+        "no se encontraron fragmentos relevantes",
+        "no hay documentos cargados",
+        "ocurrió un error al consultar el material",
+        "búsqueda rag deshabilitada",
+        "busqueda rag deshabilitada",
+    ]
+    return not any(marker in text for marker in empty_markers)
+
+
+def _user_requested_web_search(user_message: str) -> bool:
+    """Return True when the user explicitly asks to search the web."""
+    text = (user_message or "").strip().lower()
+    if not text:
+        return False
+
+    web_patterns = [
+        r"busca(r)? en google",
+        r"buscar en (la )?web",
+        r"en internet",
+        r"seg[uú]n (google|internet|la web)",
+        r"noticias (de|sobre)",
+        r"lo m[aá]s reciente",
+        r"informaci[oó]n actualizada",
+        r"actualizado (hoy|al d[ií]a)",
+    ]
+    return any(re.search(pattern, text) for pattern in web_patterns)
+
+
 async def generate_summary(existing_summary: str, new_conversation: str) -> str | None:
     """
     Summarize a conversation excerpt to fit into persistent memory chunks.
@@ -157,8 +228,12 @@ async def generate_response(
             )
         )
     
-    # Configure tools for Google Search (Search Grounding)
-    tools = [{"google_search": {}}] if use_grounding else None
+    # Prioritize RAG. Use Google Search only as fallback or when explicitly requested.
+    has_useful_rag = _rag_context_is_useful(rag_context)
+    allow_google_search = use_grounding and (
+        not has_useful_rag or _user_requested_web_search(user_message)
+    )
+    tools = [{"google_search": {}}] if allow_google_search else None
     
     gen_config = types.GenerateContentConfig(
         system_instruction=full_system_instruction,
@@ -187,16 +262,19 @@ async def generate_response(
             # Rough pricing estimate for 2.5 flash: $0.075 / 1M input, $0.30 / 1M output
             est_cost = (input_toks / 1_000_000) * 0.075 + (output_toks / 1_000_000) * 0.30
         
-        # Format grounding citations if they exist
-        if hasattr(response, "candidates") and response.candidates:
+        # Include grounding citations only when the user asks for them.
+        if _user_requested_sources(user_message) and hasattr(response, "candidates") and response.candidates:
             candidate = response.candidates[0]
             if hasattr(candidate, "grounding_metadata") and candidate.grounding_metadata:
                 chunk_meta = candidate.grounding_metadata.grounding_chunks
                 if chunk_meta:
-                    reply_text += "\n\n🌐 **Fuentes de Búsqueda (Google):**\n"
+                    source_lines = []
                     for i, chunk in enumerate(chunk_meta):
                         if hasattr(chunk, "web") and chunk.web:
-                            reply_text += f"- [{chunk.web.title}]({chunk.web.uri})\n"
+                            source_lines.append(f"- [{chunk.web.title}]({chunk.web.uri})")
+                    if source_lines:
+                        reply_text += "\n\n🌐 **Fuentes de Búsqueda (Google):**\n"
+                        reply_text += "\n".join(source_lines)
                             
         return {
             "text": reply_text,

@@ -1,0 +1,15 @@
+services:
+  beiet-bot:
+    build: .
+    container_name: beiet_bot
+    restart: always
+    volumes:
+      - ./data:/app/data
+      - .env:/app/.env
+    environment:
+      - PYTHONUNBUFFERED=1
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

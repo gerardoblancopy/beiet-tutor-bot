@@ -98,9 +98,24 @@ class Tutor(commands.Cog):
             discord_id = str(message.author.id)
             student = await self.get_student(discord_id)
 
-            # 2. Resolve student info (fall back to defaults for unregistered users)
-            student_name = student.name if student else message.author.display_name
-            subject = student.subject if student else config.DEFAULT_SUBJECT
+            # 2. Resolve subject & student info
+            # Detect subject based on guild name first
+            subject = None
+            if message.guild:
+                gn = message.guild.name.lower()
+                if "optimizacion" in gn:
+                    subject = "optimizacion"
+                elif "mercados" in gn:
+                    subject = "mercados"
+
+            if student:
+                student_name = student.name
+                if not subject:
+                    subject = student.subject
+            else:
+                student_name = message.author.display_name
+                if not subject:
+                    subject = config.DEFAULT_SUBJECT
 
             if student and is_dm and content.startswith("/"):
                 if await self._handle_dm_quiz_shortcuts(message, student, content):

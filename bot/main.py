@@ -71,8 +71,21 @@ async def on_ready():
 
     if not _commands_synced_once:
         try:
-            # Keep command IDs stable to avoid Discord client cache glitches.
-            await bot.sync_commands(force=False, method="bulk", delete_existing=False)
+            # Sync global commands first, then mirror to guild commands for instant visibility.
+            guild_ids = [guild.id for guild in bot.guilds]
+            await bot.sync_commands(
+                force=True,
+                method="bulk",
+                delete_existing=True,
+                register_guild_commands=False,
+            )
+            for guild_id in guild_ids:
+                await bot.register_commands(
+                    guild_id=guild_id,
+                    method="bulk",
+                    force=True,
+                    delete_existing=True,
+                )
             _commands_synced_once = True
             logger.info("   ✓ Slash commands synchronized with Discord")
         except Exception as e:

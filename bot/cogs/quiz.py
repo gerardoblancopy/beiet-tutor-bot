@@ -131,7 +131,6 @@ class QuizTracker(commands.Cog):
     quiz = SlashCommandGroup(
         "quiz",
         "Comandos para evaluaciones y guías de estudio",
-        contexts={discord.InteractionContextType.guild},
     )
 
     async def _send_pdf_guide(self, ctx: discord.ApplicationContext, tema: str) -> None:
@@ -216,7 +215,6 @@ class QuizTracker(commands.Cog):
     @discord.slash_command(
         name="guia_pdf",
         description="Genera una guía de ejercicios en PDF y te la envía al chat.",
-        contexts={discord.InteractionContextType.guild},
     )
     async def guia_pdf_direct(
         self,
@@ -229,7 +227,6 @@ class QuizTracker(commands.Cog):
     @discord.slash_command(
         name="guia",
         description="Genera una guía de ejercicios en PDF y te la envía al chat.",
-        contexts={discord.InteractionContextType.guild},
     )
     async def guia_direct(
         self,
