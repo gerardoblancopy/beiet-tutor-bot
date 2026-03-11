@@ -169,19 +169,36 @@ class Tutor(commands.Cog):
                         if weakest_lo_code:
                             weakest_lo_name = f"{weakest_lo_code}: {weakest_lo_desc}"
 
-                    # RAG Retrieval (works for everyone)
-                    rag_context = rag_service.retrieve_context(
-                        subject=subject,
-                        query=content[:500],
-                        n_results=3
-                    )
-
                     # Assemble System Prompt
                     system_prompt = get_tutor_system_prompt(
                         subject_name=config.SUBJECTS[subject].name,
                         student_name=student_name,
                         weakest_lo=weakest_lo_name
                     )
+
+                    # 3.5 Dual-Expert Logic: Check if we should query both collections
+                    # If we are in DMs or if subject detection was ambiguous, or if specific user needs it
+                    all_subjects_to_query = [subject]
+                    
+                    # Detect if user is in both key servers (if bot has access to member lists)
+                    # For now, if it's a DM or the user is the owner/admin, or if it's the specific user "gerardoblanco"
+                    # We can also just search both if the query seems to warrant it, 
+                    # but let's stick to: if DM or in a "general" context, query both.
+                    if not message.guild or subject not in ["optimizacion", "mercados"]:
+                         all_subjects_to_query = list(config.SUBJECTS.keys())
+                    
+                    # RAG Retrieval (handle multiple subjects if needed)
+                    rag_context_parts = []
+                    for s in all_subjects_to_query:
+                        s_context = rag_service.retrieve_context(
+                            subject=s,
+                            query=content[:500],
+                            n_results=2 if len(all_subjects_to_query) > 1 else 3
+                        )
+                        if "Ocurrió un error" not in s_context and "No se encontraron" not in s_context:
+                            rag_context_parts.append(f"--- CONTEXTO: {config.SUBJECTS[s].name} ---\n{s_context}")
+                    
+                    rag_context = "\n\n".join(rag_context_parts) if rag_context_parts else "No se encontró contexto específico en las bases de datos."
 
                     # Generate response
                     bot_response_data = await generate_response(

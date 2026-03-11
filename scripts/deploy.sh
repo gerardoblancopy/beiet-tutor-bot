@@ -15,7 +15,9 @@ git push origin main
 echo "2/2 Updating server..."
 ssh -i "$KEY" "$SERVER" bash << 'REMOTE'
 cd beiet-tutor-bot
-git pull
+git fetch --all
+git reset --hard origin/main
+git clean -fd
 sudo docker build -t beiet-bot .
 sudo docker rm -f beiet-bot
 sudo docker run -d --name beiet-bot --env-file .env -v beiet-data:/app/data --restart unless-stopped beiet-bot python -m bot.main
