@@ -149,6 +149,7 @@ COGS = [
     "bot.cogs.quiz",
     "bot.cogs.progress",
     "bot.cogs.calendar_cog",
+    "bot.cogs.interactivo",
     "bot.cogs.admin",
 ]
 

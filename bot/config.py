@@ -139,6 +139,11 @@ class BotConfig:
     def google_appointment_link(self) -> str:
         return os.getenv("GOOGLE_APPOINTMENT_LINK", "")
 
+    # Interactive Tools
+    @property
+    def interactive_costs_url(self) -> str:
+        return "https://gerardoblancopy.github.io/geometria-costos/"
+
 
 # Singleton
 config = BotConfig()
