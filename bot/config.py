@@ -144,6 +144,11 @@ class BotConfig:
     def interactive_costs_url(self) -> str:
         return "https://gerardoblancopy.github.io/geometria-costos/"
 
+    @property
+    def interactive_transport_url(self) -> str:
+        return "https://transporte.gerardoblanco.com"
+
+
 
 # Singleton
 config = BotConfig()
