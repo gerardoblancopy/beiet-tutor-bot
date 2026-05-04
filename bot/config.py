@@ -148,6 +148,18 @@ class BotConfig:
     def interactive_transport_url(self) -> str:
         return "https://transporte.gerardoblanco.com"
 
+    # Network Methods (Métodos de Redes)
+    @property
+    def interactive_rutacorta_url(self) -> str:
+        return "https://netquest-redes.vercel.app"
+
+    @property
+    def interactive_arbolmin_url(self) -> str:
+        return "https://app-mst.vercel.app"
+
+    @property
+    def interactive_flujomax_url(self) -> str:
+        return "https://app-flujo-rho.vercel.app"
 
 
 # Singleton
