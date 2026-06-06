@@ -39,6 +39,12 @@ class InteractivoView(discord.ui.View):
                 url=config.interactive_flujomax_url,
                 style=discord.ButtonStyle.link
             ))
+        elif mode == "pd":
+            self.add_item(discord.ui.Button(
+                label="🧩 Abrir Programación Dinámica",
+                url=config.interactive_pd_url,
+                style=discord.ButtonStyle.link
+            ))
 
 class InteractivoCog(commands.Cog, name="Interactivo"):
     """Cog for economics and optimization interactive tools."""
@@ -209,6 +215,38 @@ class InteractivoCog(commands.Cog, name="Interactivo"):
         embed.set_footer(text="Prof. Gerardo Blanco • BEIET Tutor")
 
         await ctx.respond(embed=embed, view=InteractivoView(mode="flujomax"))
+
+    @discord.slash_command(
+        name="pd",
+        description="Despliega la herramienta interactiva de Programación Dinámica."
+    )
+    async def pd(self, ctx: discord.ApplicationContext):
+        """Displays an embed with the link to the Dynamic Programming interactive tool."""
+        embed = discord.Embed(
+            title="🧩 Programación Dinámica — BEIET Interactivo",
+            description=(
+                "¡Hola! Soy el Profesor BEIET. He preparado una herramienta interactiva "
+                "para que puedas resolver problemas de **Programación Dinámica**.\n\n"
+                "**¿Qué puedes hacer con este simulador?**\n"
+                "🔹 Descomponer problemas en etapas y estados.\n"
+                "🔹 Aplicar el principio de optimalidad de Bellman.\n"
+                "🔹 Resolver hacia atrás (backward) y hacia adelante (forward).\n"
+                "🔹 Visualizar la política óptima paso a paso.\n\n"
+                "Haz clic en el botón de abajo para abrir la aplicación. "
+                "¡Ideal para dominar la optimización por etapas!"
+            ),
+            color=discord.Color.from_rgb(236, 72, 153)  # Pink/magenta
+        )
+
+        embed.set_thumbnail(url="https://cdn-icons-png.flaticon.com/512/2103/2103633.png")  # Puzzle icon
+        embed.add_field(
+            name="URL de acceso",
+            value=f"🔗 [Acceder directamente]({config.interactive_pd_url})",
+            inline=False
+        )
+        embed.set_footer(text="Prof. Gerardo Blanco • BEIET Tutor")
+
+        await ctx.respond(embed=embed, view=InteractivoView(mode="pd"))
 
 
 def setup(bot):

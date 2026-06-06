@@ -161,6 +161,10 @@ class BotConfig:
     def interactive_flujomax_url(self) -> str:
         return "https://app-flujo-rho.vercel.app"
 
+    @property
+    def interactive_pd_url(self) -> str:
+        return "https://app-pd-one.vercel.app"
+
 
 # Singleton
 config = BotConfig()
