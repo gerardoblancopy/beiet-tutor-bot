@@ -50,6 +50,17 @@ from bot.config import config
 
 logger = logging.getLogger("beiet.rag")
 
+# Embedding output dimension per Gemini model. This MUST match the dimension
+# the Chroma collection was built with: a wrong fallback dimension makes Chroma
+# reject the vector ("expecting embedding with dimension of N, got M") and the
+# whole query fails. gemini-embedding-001 defaults to 3072; text-embedding-004
+# is 768. Keep this in sync whenever model_name changes.
+_MODEL_EMBED_DIMS = {
+    "gemini-embedding-001": 3072,
+    "text-embedding-004": 768,
+}
+_DEFAULT_EMBED_DIM = 3072
+
 
 class GeminiEmbeddingFunction(EmbeddingFunction):
     """Custom embedding function for ChromaDB using Google's new genai SDK."""
@@ -57,14 +68,21 @@ class GeminiEmbeddingFunction(EmbeddingFunction):
     def __init__(self, api_key: str, model_name: str = "gemini-embedding-001"):
         self.client = genai.Client(api_key=api_key)
         self.model_name = model_name
+        self.embed_dim = _MODEL_EMBED_DIMS.get(model_name, _DEFAULT_EMBED_DIM)
 
     def __call__(self, input: Documents) -> Embeddings:
         """Embeds a list of strings using the Gemini model."""
         if not input:
             return []
-            
+
         embeddings = []
         for text in input:
+            # Empty/whitespace content (e.g. audio-only messages) makes the API
+            # return 400 "content contains an empty Part"; skip the call and
+            # return an aligned zero vector so the batch stays positionally valid.
+            if not text or not text.strip():
+                embeddings.append([0.0] * self.embed_dim)
+                continue
             try:
                 response = self.client.models.embed_content(
                     model=self.model_name,
@@ -72,8 +90,8 @@ class GeminiEmbeddingFunction(EmbeddingFunction):
                 )
                 embeddings.append(response.embeddings[0].values)
             except Exception as e:
-                print(f"Error embedding text: {e}")
-                embeddings.append([0.0] * 768)
+                logger.warning(f"Error embedding text: {e}")
+                embeddings.append([0.0] * self.embed_dim)
         return embeddings
 
 
@@ -146,7 +164,12 @@ class RAGService:
         """Retrieves document chunks for a query."""
         if not config.gemini_api_key:
             return "⚠️ Búsqueda RAG deshabilitada (Falta API Key)."
-        
+
+        # Empty queries (e.g. audio-only messages with no text) have nothing to
+        # match; skip retrieval instead of pulling arbitrary nearest neighbors.
+        if not query or not query.strip():
+            return "No se encontraron fragmentos relevantes."
+
         try:
             collection = self.get_collection(subject)
             if collection.count() == 0:
